@@ -4,7 +4,7 @@ from logging import getLogger
 
 from jips.enums import AudioFormat
 from jips.exc import AmbiguityException
-from jips.dictclient import DictClient
+from jips.dictclient import DictClient, get_dict_client
 
 from flask import Flask, request, url_for, send_file
 
@@ -14,11 +14,8 @@ logger = getLogger(__name__)
 
 ONE_YEAR_IN_SECONDS = int(timedelta(days=366).total_seconds())
 
-def get_dicts() -> dict[str, Path]:
-    dict_dir = (Path(__file__).parent.parent / "dicts").resolve()
-    dicts = {f.stem: f for f in dict_dir.glob("*.zip")}
-    logger.info("found dicts: %s", [dicts])
-    return dicts
+dict_dir = (Path(__file__).parent.parent / "dicts").resolve()
+dicts = {f.stem: get_dict_client(f) for f in dict_dir.glob("*.zip")}
 
 
 @audioserver.route("/ok")
@@ -31,9 +28,7 @@ def audio_json():
     term = request.args["term"]
     reading = request.args["reading"]
 
-    dicts = get_dicts()
-
-    dict_client = DictClient(dicts["nhk16"])
+    dict_client = dicts["nhk16"]
     try:
         utterances = dict_client.get_utterances(term, reading)
     except AmbiguityException as e:
@@ -60,7 +55,7 @@ def utterance_file(dict_name: str, internal_id: str, ext: str):
     # FIXME: handle 404
     audio_format = AudioFormat(ext)
     # FIXME: handle unknown dict
-    dict_client = DictClient(get_dicts()[dict_name])
+    dict_client = dicts[dict_name]
     audio = dict_client.get_audio_by_id(internal_id)
     return send_file(
         audio, mimetype=audio_format.mimetype(), max_age=ONE_YEAR_IN_SECONDS

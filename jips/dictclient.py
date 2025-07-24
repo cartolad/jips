@@ -1,3 +1,4 @@
+import functools
 from pathlib import Path
 import sqlite3
 import json
@@ -17,6 +18,13 @@ class Utterance:
     audio_format: AudioFormat
     expression: str
     reading: str
+
+@functools.cache
+def get_dict_client(zipfile_path: Path) -> "DictClient":
+    """Get the dict client for a given path.
+
+    This is a speedup because initing the zipfile takes ~0.5s so do it just once."""
+    return DictClient(zipfile_path)
 
 
 class DictClient:
@@ -38,11 +46,14 @@ class DictClient:
             entry JSON
         );"""
 
+        index_1_stmt = "CREATE INDEX idx_entries_kana ON entries (json_extract(entry, '$.kana'));"
+
         with sqlite3.connect(self.index_path) as conn:
             conn.execute(create_table_stmt)
             with self.zipfile.open("nhk16/entries.json") as entries_f:
                 entries = [(json.dumps(e),) for e in json.load(entries_f)]
             conn.executemany(stmt, entries)
+            conn.execute(index_1_stmt)
 
     def get_utterances(self, expression: str, reading: str) -> list[Utterance]:
         stmt = """
