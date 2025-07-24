@@ -3,3 +3,6 @@ services:
     build: .
     ports:
       - "1989:1989"
+    volumes:
+      - ./dicts:/dicts
+

@@ -53,8 +53,8 @@ def test_audio__success(client, audiojson_schema):
         "type": "audioSourceList",
         "audioSources": [
             {
-                "name": "引く (ひく)",
-                "url": "http://localhost/utterances/jorg-udb-1.mp3",
+                "name": "[nhk16] 引く",
+                "url": "http://localhost/utterances/nhk16/20171206152741.mp3",
             }
         ],
     }
