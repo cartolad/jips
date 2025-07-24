@@ -1,0 +1,5 @@
+services:
+  jips:
+    build: .
+    ports:
+      - "1989:1989"
