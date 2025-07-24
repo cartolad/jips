@@ -37,7 +37,7 @@ There are other audio servers for Yomitan, so what makes Jips different?
 Inside Yomitan's settings, under `Audio` > `Configure audio playback sources`
 add the following url as `Custom URL (JSON)`:
 
-    `http://localhost:1989/audio.json?term={term}&reading={reading}`
+    http://localhost:1989/audio.json?term={term}&reading={reading}
 
 Jips needs both the Kanji and the reading to unambigiously locate the
 appropriate audio in dictionaries.
