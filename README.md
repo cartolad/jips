@@ -6,25 +6,41 @@ It is designed for use with the [Yomitan](https://yomitan.wiki/) pop-up
 dictionary but also works with other immesion learning tools, including
 [Memento](https://github.com/ripose-jp/Memento).
 
+## Why use a (local) audio server?
+
+Yomitan comes built in with the ability to retrieve audio from online sources,
+including JapanesePod101, Jisho and Wiktionary.
+
+So why use a seperate audio server?
+
+The trouble is that these audio sources are not great.  They have sound issues,
+for clicks and reverb that will drive you nuts when you include the audio on a
+mined card in Anki.  They are slow to load - breaking your focus when you're
+concentrating on some difficult Japanese.  And they have incomplete coverage.
+
+Jips is designed to improve on all of this.
+
 ## Features
 
-There are other audio servers for Yomitan, so what makes Jips different?
-
 1. Jips is easy to run
-   - Just place the dictionary files and run `docker compose up`
+   - Just place the dictionary files and run `docker compose up -d`
 2. Jips is simple
    - Doesn't try to run from within Anki
      - this is not necessary as people create their cards outside anki and then add them via ankiconnect
    - Uses standard HTTP libaries for Python
      - Flask, Gunicorn, etc, super duper boring stuff
 3. Jips is fast
-   - it does well over 1000 requests per second
+   - does well over 1000 requests per second
+     - so lookups are instant
      - no rewrite-in-rust is necessary
-   - and sets HTTP cache headers correctly so that browsers cache the audio
+   - [TODO] and sets HTTP cache headers correctly so that browsers cache the audio
 4. Jips is high quality
    - complete test suite
    - static analysis
    - conforms to Yomitans own json schema
+5. Jips has massive coverage
+   - with common community dictionaries Jips can cover Xk words
+   - more than enough for your Japanese learning journey
 
 ## Getting up and running
 
