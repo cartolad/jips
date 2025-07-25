@@ -1,4 +1,3 @@
-import functools
 from pathlib import Path
 import sqlite3
 import json
@@ -19,19 +18,11 @@ class Utterance:
     expression: str
     reading: str
 
-@functools.cache
-def get_dict_client(zipfile_path: Path) -> "DictClient":
-    """Get the dict client for a given path.
-
-    This is a speedup because initing the zipfile takes ~0.5s so do it just once."""
-    return DictClient(zipfile_path)
-
 
 class DictClient:
     def __init__(self, zipfile_path: Path):
         self.zipfile_path = zipfile_path
         self.name = zipfile_path.stem
-        self.zipfile = ZipFile(self.zipfile_path)
         self.index_path = self.zipfile_path.parent / f"{self.zipfile_path.stem}.sqlite3"
         self._ensure_index()
 
@@ -50,9 +41,10 @@ class DictClient:
 
         with sqlite3.connect(self.index_path) as conn:
             conn.execute(create_table_stmt)
-            with self.zipfile.open("nhk16/entries.json") as entries_f:
-                entries = [(json.dumps(e),) for e in json.load(entries_f)]
-            conn.executemany(stmt, entries)
+            with ZipFile(self.zipfile_path) as zipfile:
+                with zipfile.open(f"{self.name}/entries.json") as entries_f:
+                    entries = [(json.dumps(e),) for e in json.load(entries_f)]
+                    conn.executemany(stmt, entries)
             conn.execute(index_1_stmt)
 
     def get_utterances(self, expression: str, reading: str) -> list[Utterance]:
@@ -101,4 +93,5 @@ class DictClient:
         return utterances
 
     def get_audio_by_id(self, internal_id: str):
-        return self.zipfile.open(f"{self.name}/media/{internal_id}.mp3", "r")
+        with ZipFile(self.zipfile_path) as zipfile:
+            return zipfile.open(f"{self.name}/media/{internal_id}.mp3", "r")

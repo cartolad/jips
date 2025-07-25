@@ -4,7 +4,7 @@ from logging import getLogger
 
 from jips.enums import AudioFormat
 from jips.exc import AmbiguityException
-from jips.dictclient import DictClient, get_dict_client
+from jips.dictclient import DictClient
 
 from flask import Flask, request, url_for, send_file
 
@@ -15,7 +15,7 @@ logger = getLogger(__name__)
 ONE_YEAR_IN_SECONDS = int(timedelta(days=366).total_seconds())
 
 dict_dir = (Path(__file__).parent.parent / "dicts").resolve()
-dicts = {f.stem: get_dict_client(f) for f in dict_dir.glob("*.zip")}
+dicts = {f.stem: DictClient(f) for f in dict_dir.glob("*.zip")}
 
 
 @audioserver.route("/ok")
