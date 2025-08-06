@@ -23,6 +23,12 @@ def ok():
     return {"ok": True}
 
 
+@audioserver.route("/stats")
+def stats():
+    dict_client = dicts["nhk16"]
+    return dict_client.stats()
+
+
 @audioserver.route("/audio.json")
 def audio_json():
     term = request.args["term"]
@@ -49,6 +55,7 @@ def audio_json():
             }
         )
     return {"type": "audioSourceList", "audioSources": audio_sources}
+
 
 @audioserver.route("/utterances/<dict_name>/<internal_id>.<ext>")
 def utterance_file(dict_name: str, internal_id: str, ext: str):

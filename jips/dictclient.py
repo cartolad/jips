@@ -10,6 +10,7 @@ from .enums import AudioFormat
 
 logger = getLogger(__name__)
 
+
 @dataclass
 class Utterance:
     source_dict: str
@@ -37,7 +38,9 @@ class DictClient:
             entry JSON
         );"""
 
-        index_1_stmt = "CREATE INDEX idx_entries_kana ON entries (json_extract(entry, '$.kana'));"
+        index_1_stmt = (
+            "CREATE INDEX idx_entries_kana ON entries (json_extract(entry, '$.kana'));"
+        )
 
         with sqlite3.connect(self.index_path) as conn:
             conn.execute(create_table_stmt)
@@ -46,6 +49,40 @@ class DictClient:
                     entries = [(json.dumps(e),) for e in json.load(entries_f)]
                     conn.executemany(stmt, entries)
             conn.execute(index_1_stmt)
+
+    def stats(self) -> dict:
+        stmt = """
+        SELECT
+          (
+            SELECT
+              COUNT(*)
+            FROM
+              (
+                SELECT DISTINCT
+                  json_extract(entry, '$.kana') AS kana,
+                  kanji.value AS kanji
+                FROM
+                  entries,
+                  json_each(json_extract(entry, '$.kanji')) AS kanji
+              )
+          ) AS distinct_words,
+          (
+            SELECT
+              COUNT(DISTINCT json_extract(accents.value, '$.soundFile'))
+            FROM
+              entries,
+              json_each(json_extract(entry, '$.accents')) AS accents
+            WHERE
+              json_extract(accents.value, '$.soundFile') IS NOT NULL
+          ) AS distinct_sound_files;
+        """
+        with sqlite3.connect(self.index_path) as conn:
+            cur = conn.execute(stmt)
+            row = cur.fetchone()
+        return {
+            "words": row[0],
+            "sounds": row[1],
+        }
 
     def get_utterances(self, expression: str, reading: str) -> list[Utterance]:
         stmt = """
@@ -83,11 +120,7 @@ class DictClient:
             else:
                 internal_id = accent["soundFile"].removesuffix(".mp3")
                 utterance = Utterance(
-                    self.name,
-                    internal_id,
-                    AudioFormat.MP3,
-                    expression,
-                    reading
+                    self.name, internal_id, AudioFormat.MP3, expression, reading
                 )
                 utterances.append(utterance)
         return utterances

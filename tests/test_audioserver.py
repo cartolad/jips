@@ -20,6 +20,11 @@ def test_ok(client):
     assert resp.status_code == 200
 
 
+def test_stats(client):
+    resp = client.get("/stats")
+    assert resp.status_code == 200
+
+
 def test_audiojson__invalid_request(client):
     resp = client.get("/audio.json")
     assert resp.status_code == 400
