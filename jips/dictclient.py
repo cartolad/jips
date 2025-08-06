@@ -1,3 +1,4 @@
+from abc import ABC
 from pathlib import Path
 import sqlite3
 import json
@@ -20,10 +21,16 @@ class Utterance:
     reading: str
 
 
-class DictClient:
+class DictClient(ABC):
+    pass
+
+
+class NHK16Client(DictClient):
+    """This client is for the nhk16.zip format - with an "entries.json" file."""
+
     def __init__(self, zipfile_path: Path):
+        self.name = "nhk16"
         self.zipfile_path = zipfile_path
-        self.name = zipfile_path.stem
         self.index_path = self.zipfile_path.parent / f"{self.zipfile_path.stem}.sqlite3"
         self._ensure_index()
 
@@ -45,7 +52,7 @@ class DictClient:
         with sqlite3.connect(self.index_path) as conn:
             conn.execute(create_table_stmt)
             with ZipFile(self.zipfile_path) as zipfile:
-                with zipfile.open(f"{self.name}/entries.json") as entries_f:
+                with zipfile.open("nhk16/entries.json") as entries_f:
                     entries = [(json.dumps(e),) for e in json.load(entries_f)]
                     conn.executemany(stmt, entries)
             conn.execute(index_1_stmt)
@@ -120,11 +127,11 @@ class DictClient:
             else:
                 internal_id = accent["soundFile"].removesuffix(".mp3")
                 utterance = Utterance(
-                    self.name, internal_id, AudioFormat.MP3, expression, reading
+                    "nhk16", internal_id, AudioFormat.MP3, expression, reading
                 )
                 utterances.append(utterance)
         return utterances
 
     def get_audio_by_id(self, internal_id: str):
         with ZipFile(self.zipfile_path) as zipfile:
-            return zipfile.open(f"{self.name}/media/{internal_id}.mp3", "r")
+            return zipfile.open(f"nhk16/media/{internal_id}.mp3", "r")
