@@ -20,6 +20,11 @@ def test_ok(client):
     assert resp.status_code == 200
 
 
+def test_index(client):
+    resp = client.get("/")
+    assert resp.status_code == 200
+
+
 def test_stats(client):
     resp = client.get("/stats")
     assert resp.status_code == 200

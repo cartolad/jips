@@ -6,7 +6,7 @@ from jips.enums import AudioFormat
 from jips.exc import AmbiguityException
 from jips.dictclient import DictClient
 
-from flask import Flask, request, url_for, send_file
+from flask import Flask, request, url_for, send_file, render_template
 
 audioserver = Flask(__name__)
 
@@ -16,6 +16,11 @@ ONE_YEAR_IN_SECONDS = int(timedelta(days=366).total_seconds())
 
 dict_dir = (Path(__file__).parent.parent / "dicts").resolve()
 dicts = {f.stem: DictClient(f) for f in dict_dir.glob("*.zip")}
+
+
+@audioserver.route("/")
+def index():
+    return render_template("index.html")
 
 
 @audioserver.route("/ok")
