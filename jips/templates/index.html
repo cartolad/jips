@@ -1,10 +1,21 @@
+<!--- -*- mode: jinja2 -*- --->
 <!DOCTYPE html>
 <html>
   <head>
     <title>Jips</title>
   </head>
   <body>
-    <h1>Lookup audio</h1>
+    <h1>Jips</h1>
+    <h2>Dictionaries loaded</h2>
+    <ol>
+      <ul>
+        {% for dict in dicts.keys() %}
+        <li>{{ dict }}</li>
+        {% endfor %}
+      </ul>
+    </ol>
+
+    <h2>Lookup audio</h2>
     <form action="/audio.json" method="get">
       <label for="term">Term:</label>
       <input type="text" id="term" name="term">

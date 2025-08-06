@@ -103,3 +103,15 @@ def test_audiojson__ambigious_without_part_of_speech(client, audiojson_schema):
     )
     assert resp.status_code == 200
     validate(instance=resp.json, schema=audiojson_schema)
+
+
+def test_audio(client):
+    resp = client.get("/utterances/nhk16/20171115151714.mp3")
+    assert resp.status_code == 200
+
+    # check content type is correct
+    assert resp.headers["Content-Type"] == "audio/mpeg"
+
+    # check cache headers are there
+    assert "Expires" in resp.headers
+    assert "public" in resp.headers["Cache-Control"]

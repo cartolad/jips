@@ -20,7 +20,10 @@ dicts = {f.stem: DictClient(f) for f in dict_dir.glob("*.zip")}
 
 @audioserver.route("/")
 def index():
-    return render_template("index.html")
+    return render_template(
+        "index.html",
+        dicts=dicts,
+    )
 
 
 @audioserver.route("/ok")
