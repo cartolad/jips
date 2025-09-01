@@ -5,6 +5,9 @@ import json
 from zipfile import ZipFile
 from logging import getLogger
 from dataclasses import dataclass
+import subprocess
+import io
+import re
 
 from .exc import AmbiguityException
 from .enums import AudioFormat
@@ -25,6 +28,10 @@ class DictClient(ABC):
     pass
 
 
+class InvalidIDException(Exception):
+    pass
+
+
 class NHK16Client(DictClient):
     """This client is for the nhk16.zip format - with an "entries.json" file."""
 
@@ -33,6 +40,7 @@ class NHK16Client(DictClient):
         self.zipfile_path = zipfile_path
         self.index_path = self.zipfile_path.parent / f"{self.zipfile_path.stem}.sqlite3"
         self._ensure_index()
+        self.internal_id_regex = re.compile("^[0-9]+")
 
     def _ensure_index(self) -> None:
         if self.index_path.exists():
@@ -133,5 +141,12 @@ class NHK16Client(DictClient):
         return utterances
 
     def get_audio_by_id(self, internal_id: str):
-        with ZipFile(self.zipfile_path) as zipfile:
-            return zipfile.open(f"nhk16/media/{internal_id}.mp3", "r")
+        if not self.internal_id_regex.match(internal_id):
+            raise InvalidIDException("invalid id: %s", internal_id)
+
+        # zipfile module is extremely slow for individual reads - so shell out
+        # to `unzip` as an optimisation
+        internal_path = f"nhk16/media/{internal_id}.mp3"
+        command = ["unzip", "-p", self.zipfile_path, internal_path]
+        result = subprocess.run(command, capture_output=True, check=True)
+        return io.BytesIO(result.stdout)

@@ -4,7 +4,7 @@ from logging import getLogger
 
 from jips.enums import AudioFormat
 from jips.exc import AmbiguityException
-from jips.dictclient import DictClient, NHK16Client
+from jips.dictclient import DictClient, NHK16Client, InvalidIDException
 
 from flask import Flask, request, url_for, send_file, render_template
 
@@ -84,7 +84,10 @@ def utterance_file(dict_name: str, internal_id: str, ext: str):
     audio_format = AudioFormat(ext)
     # FIXME: handle unknown dict
     dict_client = dicts[dict_name]
-    audio = dict_client.get_audio_by_id(internal_id)
+    try:
+        audio = dict_client.get_audio_by_id(internal_id)
+    except InvalidIDException:
+        return "invalid id", 400
     return send_file(
         audio, mimetype=audio_format.mimetype(), max_age=ONE_YEAR_IN_SECONDS
     )

@@ -75,6 +75,7 @@ def test_audio__success(client, audiojson_schema):
 
     mp3_resp = client.get(url)
     assert mp3_resp.status_code == 200
+    assert mp3_resp.data[:3] == b"ID3", "doesn't look like an mp3 file!"
 
 
 def test_audio__repeat(client, audiojson_schema):
@@ -115,3 +116,8 @@ def test_audio(client):
     # check cache headers are there
     assert "Expires" in resp.headers
     assert "public" in resp.headers["Cache-Control"]
+
+
+def test_audio_invalid_id(client):
+    resp = client.get("/utterances/nhk16/ date .mp3")
+    assert resp.status_code == 400
