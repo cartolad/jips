@@ -1,4 +1,4 @@
-FROM python:3.13-slim-bookworm AS base
+FROM python:3.14-slim-trixie AS base
 RUN apt-get update && apt-get install -y unzip
 RUN pip install uv
 ENV UV_LINK_MODE=copy
