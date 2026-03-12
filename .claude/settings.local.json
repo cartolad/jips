@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+        "Bash(tox *)",
+        "Bash(tox)",
+        "Bash(.tox/*/bin/python -m pytest *)",
+        "Bash(.tox/*/bin/mypy *)",
+        "Bash(.tox/*/bin/ruff *)"
+    ]
+  }
+}
