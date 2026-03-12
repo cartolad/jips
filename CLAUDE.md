@@ -19,9 +19,11 @@ The `dicts/` directory holds large binary ZIP files and is **not tracked in git*
 ## Dev Commands
 
 ```sh
-tox                          # canonical: runs ruff check + pytest
-uv run --dev pytest          # run tests directly
-.tox/py/bin/ruff check .     # lint directly (after tox has set up the env)
+uv run tox                   # canonical: runs lint + test environments
+uv run tox -e test           # tests only
+uv run tox -e lint           # lint only
+uv run --dev pytest          # run tests directly (without tox)
+.tox/test/bin/ruff check .   # lint directly (after tox has set up the env)
 ```
 
 Docker is also available:
@@ -34,7 +36,7 @@ docker compose up --build -d  # runs on port 1989
 
 Mirrors `.claude/settings.local.json`:
 
-- `tox` / `tox *`
+- `uv run tox` / `uv run tox *`
 - `.tox/*/bin/python -m pytest *`
 - `.tox/*/bin/mypy *`
 - `.tox/*/bin/ruff *`
