@@ -1,4 +1,4 @@
-from abc import ABC
+from abc import ABC, abstractmethod
 from pathlib import Path
 import sqlite3
 import json
@@ -7,6 +7,7 @@ from logging import getLogger
 from dataclasses import dataclass
 import subprocess
 import io
+import os
 import re
 
 from .exc import AmbiguityException
@@ -24,12 +25,24 @@ class Utterance:
     reading: str
 
 
-class DictClient(ABC):
-    pass
-
-
 class InvalidIDException(Exception):
     pass
+
+
+class DictClient(ABC):
+    name: str
+
+    @abstractmethod
+    def stats(self) -> dict:
+        ...
+
+    @abstractmethod
+    def get_utterances(self, expression: str, reading: str) -> list[Utterance]:
+        ...
+
+    @abstractmethod
+    def get_audio_by_id(self, internal_id: str):
+        ...
 
 
 class NHK16Client(DictClient):
@@ -150,3 +163,139 @@ class NHK16Client(DictClient):
         command = ["unzip", "-p", self.zipfile_path, internal_path]
         result = subprocess.run(command, capture_output=True, check=True)
         return io.BytesIO(result.stdout)
+
+
+class IndexJsonClient(DictClient):
+    """Client for the version-2 "index.json" dictionary format (daijisen,
+    shinmeikai8) - a per-dict media directory plus headword lookups."""
+
+    def __init__(self, zipfile_path: Path):
+        self.name = zipfile_path.stem
+        self.zipfile_path = zipfile_path
+        self.index_path = zipfile_path.parent / f"{zipfile_path.stem}.sqlite3"
+        self.internal_id_regex = re.compile(r"^[A-Za-z0-9]+(\+[A-Za-z0-9]+)*$")
+        self.media_dir = "media"
+        self._ensure_index()
+
+    def _ensure_index(self) -> None:
+        if self.index_path.exists():
+            logger.info("index found for %s", self.name)
+            return
+
+        logger.info("index not found for %s - building", self.name)
+
+        # This index caches media-file resolution (daijisen refs are written
+        # `.ogg` but the ZIP ships `.mp3`). Replacing a dictionary ZIP requires
+        # deleting its sibling <stem>.sqlite3 index.
+        temp_index_path = Path(f"{self.index_path}.{os.getpid()}")
+
+        with ZipFile(self.zipfile_path) as zipfile:
+            index_json = json.load(zipfile.open(f"{self.name}/index.json"))
+            meta = index_json.get("meta", {})
+            if meta.get("media_dir") != self.media_dir:
+                logger.warning(
+                    "index.json meta.media_dir %r differs from expected %r for %s",
+                    meta.get("media_dir"),
+                    self.media_dir,
+                    self.name,
+                )
+            media_dir_prefix = f"{self.name}/{self.media_dir}/"
+            media_files = {
+                name.removeprefix(media_dir_prefix)
+                for name in zipfile.namelist()
+                if name.startswith(media_dir_prefix)
+            }
+
+            rows = []
+            for headword, refs in index_json.get("headwords", {}).items():
+                for ref in refs:
+                    resolved = self._resolve_ref(ref, media_files)
+                    if resolved is None:
+                        logger.warning(
+                            "unresolvable media ref %r for headword %r in %s",
+                            ref,
+                            headword,
+                            self.name,
+                        )
+                        continue
+                    media_file, internal_id, ext = resolved
+                    rows.append((headword, internal_id, ext))
+
+        with sqlite3.connect(temp_index_path) as conn:
+            conn.execute(
+                "CREATE TABLE headwords (headword TEXT NOT NULL, id TEXT NOT NULL, ext TEXT NOT NULL)"
+            )
+            conn.execute("CREATE INDEX idx_headwords_headword ON headwords (headword)")
+            conn.executemany(
+                "INSERT INTO headwords (headword, id, ext) VALUES (?, ?, ?)",
+                set(rows),
+            )
+        os.replace(temp_index_path, self.index_path)
+
+    def _resolve_ref(
+        self, ref: str, media_files: set[str]
+    ) -> tuple[str, str, str] | None:
+        """Resolve an index.json media ref to an actual ZIP media file.
+
+        Tries the ref basename as-is first, then with the extension swapped to
+        each known AudioFormat value (daijisen refs are `.ogg` but the media
+        files shipped are `.mp3`). Returns (media_file, internal_id, ext) or
+        None if nothing in the ZIP matches.
+        """
+        candidates = [ref]
+        base, _, _ = ref.rpartition(".")
+        candidates.extend(f"{base}.{fmt.value}" for fmt in AudioFormat)
+
+        for media_file in candidates:
+            if media_file in media_files:
+                internal_id, ext = media_file.rsplit(".", 1)
+                return media_file, internal_id, ext
+        return None
+
+    def stats(self) -> dict:
+        with sqlite3.connect(self.index_path) as conn:
+            row = conn.execute(
+                "SELECT COUNT(DISTINCT headword), COUNT(DISTINCT id) FROM headwords"
+            ).fetchone()
+        return {"words": row[0], "sounds": row[1]}
+
+    def get_utterances(self, expression: str, reading: str) -> list[Utterance]:
+        # term-first gives homograph precision; reading covers kana-only keys
+        rows = self._lookup_headword(expression)
+        if not rows:
+            rows = self._lookup_headword(reading)
+
+        utterances = []
+        for internal_id, ext in rows:
+            # AudioFormat enum values are lowercase, so use NAME lookup
+            try:
+                audio_format = AudioFormat[ext.upper()]
+            except KeyError:
+                logger.warning(
+                    "unknown audio extension %r for %s (%s)", ext, expression, reading
+                )
+                continue
+            utterances.append(
+                Utterance(self.name, internal_id, audio_format, expression, reading)
+            )
+        return utterances
+
+    def _lookup_headword(self, headword: str) -> list[tuple[str, str]]:
+        stmt = "SELECT DISTINCT id, ext FROM headwords WHERE headword = ? ORDER BY id"
+        with sqlite3.connect(self.index_path) as conn:
+            rows = conn.execute(stmt, (headword,)).fetchall()
+        return [(row[0], row[1]) for row in rows]
+
+    def get_audio_by_id(self, internal_id: str):
+        if not self.internal_id_regex.match(internal_id):
+            raise InvalidIDException(f"invalid id: {internal_id}")
+
+        # zipfile module is extremely slow for individual reads - so shell out
+        # to `unzip` as an optimisation
+        for ext in ("mp3", "ogg"):
+            internal_path = f"{self.name}/{self.media_dir}/{internal_id}.{ext}"
+            command = ["unzip", "-p", str(self.zipfile_path), internal_path]
+            result = subprocess.run(command, capture_output=True, check=False)
+            if result.returncode == 0:
+                return io.BytesIO(result.stdout)
+        raise InvalidIDException(f"no audio file found for id: {internal_id}")

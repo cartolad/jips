@@ -4,7 +4,7 @@ from logging import getLogger
 
 from jips.enums import AudioFormat
 from jips.exc import AmbiguityException
-from jips.dictclient import DictClient, NHK16Client, InvalidIDException
+from jips.dictclient import DictClient, NHK16Client, IndexJsonClient, InvalidIDException
 
 from flask import Flask, request, url_for, send_file, render_template
 
@@ -20,6 +20,8 @@ dict_dir = (Path(__file__).parent.parent / "dicts").resolve()
 def get_dict_client(path: Path) -> DictClient | None:
     if path.name == "nhk16.zip":
         return NHK16Client(path)
+    elif path.name in ("shinmeikai8.zip", "daijisen.zip"):
+        return IndexJsonClient(path)
     else:
         return None
 
@@ -46,8 +48,7 @@ def ok():
 
 @audioserver.route("/stats")
 def stats():
-    dict_client = dicts["nhk16"]
-    return dict_client.stats()
+    return {name: client.stats() for name, client in dicts.items()}
 
 
 @audioserver.route("/audio.json")
@@ -55,26 +56,27 @@ def audio_json():
     term = request.args["term"]
     reading = request.args["reading"]
 
-    dict_client = dicts["nhk16"]
-    try:
-        utterances = dict_client.get_utterances(term, reading)
-    except AmbiguityException as e:
-        return {"error": str(e)}, 500
-
     audio_sources = []
-    for u in utterances:
-        audio_sources.append(
-            {
-                "name": f"[{dict_client.name}] {u.expression}",
-                "url": url_for(
-                    "utterance_file",
-                    dict_name=dict_client.name,
-                    internal_id=u.source_dict_id,
-                    ext=u.audio_format.value,
-                    _external=True,
-                ),
-            }
-        )
+    for dict_client in dicts.values():
+        try:
+            utterances = dict_client.get_utterances(term, reading)
+        except AmbiguityException as e:
+            logger.warning("ambiguity for %s (%s) in %s: %s", term, reading, dict_client.name, e)
+            continue
+
+        for u in utterances:
+            audio_sources.append(
+                {
+                    "name": f"[{u.source_dict}] {u.expression}",
+                    "url": url_for(
+                        "utterance_file",
+                        dict_name=u.source_dict,
+                        internal_id=u.source_dict_id,
+                        ext=u.audio_format.value,
+                        _external=True,
+                    ),
+                }
+            )
     return {"type": "audioSourceList", "audioSources": audio_sources}
 
 
