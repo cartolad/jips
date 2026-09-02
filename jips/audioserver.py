@@ -1,6 +1,8 @@
 from pathlib import Path
 from datetime import timedelta
 from logging import getLogger
+import hashlib
+import random
 
 from jips.enums import AudioFormat
 from jips.exc import AmbiguityException
@@ -32,6 +34,32 @@ for dict_path in dict_dir.glob("*.zip"):
     if dict_client is not None:
         dicts[dict_path.stem] = dict_client
 
+# Tier 1 sources are the highest-quality audio (nhk16, daijisen). Yomitan
+# plays the first source in the list by default, so tier-1 sources must always
+# precede tier-2 (shinmeikai8). Within a tier the order is a deterministic
+# shuffle seeded by the lookup, so no single tier-1 dict is always first.
+SOURCE_TIERS = {"nhk16": 1, "daijisen": 1, "shinmeikai8": 2}
+
+
+def _lookup_seed(term: str, reading: str) -> int:
+    digest = hashlib.blake2b(f"{term}\0{reading}".encode(), digest_size=8)
+    return int.from_bytes(digest.digest(), "big")
+
+
+def _ordered_dict_clients(term: str, reading: str) -> list[DictClient]:
+    by_tier: dict[int, list[DictClient]] = {}
+    for client in sorted(dicts.values(), key=lambda c: c.name):
+        by_tier.setdefault(SOURCE_TIERS.get(client.name, 99), []).append(client)
+
+    rng = random.Random(_lookup_seed(term, reading))
+    ordered = []
+    for tier in sorted(by_tier):
+        tier_clients = by_tier[tier]
+        if len(tier_clients) > 1:
+            rng.shuffle(tier_clients)
+        ordered.extend(tier_clients)
+    return ordered
+
 
 @audioserver.route("/")
 def index():
@@ -57,7 +85,7 @@ def audio_json():
     reading = request.args["reading"]
 
     audio_sources = []
-    for dict_client in dicts.values():
+    for dict_client in _ordered_dict_clients(term, reading):
         try:
             utterances = dict_client.get_utterances(term, reading)
         except AmbiguityException as e:

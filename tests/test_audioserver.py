@@ -96,6 +96,27 @@ def test_audio__success(client, audiojson_schema):
     assert mp3_resp.data[:3] == b"ID3", "doesn't look like an mp3 file!"
 
 
+def test_audiojson__source_ordering_prefers_high_tiers(client):
+    term = "引く"
+    reading = "ひく"
+    resp = client.get("/audio.json", query_string={"term": term, "reading": reading})
+    assert resp.status_code == 200
+
+    source_names = [s["name"] for s in resp.json["audioSources"]]
+    # shinmeikai8 is tier 2: when nhk16 or daijisen also answer, every tier-1
+    # source must come before the shinmeikai8 source
+    tier2_idx = next(i for i, n in enumerate(source_names) if n.startswith("[shinmeikai8]"))
+    tier1_idxs = [
+        i for i, n in enumerate(source_names) if n.startswith("[nhk16]") or n.startswith("[daijisen]")
+    ]
+    assert tier1_idxs
+    assert all(i < tier2_idx for i in tier1_idxs), "shinmeikai8 must be ordered after tier-1 sources"
+
+    # ordering is deterministic for a given term/reading
+    again = client.get("/audio.json", query_string={"term": term, "reading": reading})
+    assert source_names == [s["name"] for s in again.json["audioSources"]]
+
+
 def test_audiojson__shinmeikai8(client, audiojson_schema):
     term = "引く"
     reading = "ひく"
