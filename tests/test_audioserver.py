@@ -149,6 +149,40 @@ def test_audiojson__daijisen(client, audiojson_schema):
     assert mp3_resp.data[:3] == b"ID3", "doesn't look like an mp3 file!"
 
 
+def test_audiojson__daijisen_reading_disambiguation(client, audiojson_schema):
+    """A headword shared by several readings must only return the requested
+    reading's audio: 柱 has じ / じゅう / ちゅう / はしら."""
+    resp = client.get("/audio.json", query_string={"term": "柱", "reading": "はしら"})
+    assert resp.status_code == 200
+    validate(instance=resp.json, schema=audiojson_schema)
+
+    urls = [s["url"] for s in resp.json["audioSources"] if s["name"] == "[daijisen] 柱"]
+    assert urls == ["http://localhost/utterances/daijisen/s00019163+s00019164.mp3"]
+
+
+def test_audiojson__daijisen_excludes_other_readings(client):
+    """部/ぶ must not return the べ audio that shares the 部 headword."""
+    resp = client.get("/audio.json", query_string={"term": "部", "reading": "ぶ"})
+    assert resp.status_code == 200
+
+    urls = [s["url"] for s in resp.json["audioSources"] if s["name"] == "[daijisen] 部"]
+    assert urls == ["http://localhost/utterances/daijisen/s00005446+s00019366.mp3"]
+
+
+def test_audiojson__shinmeikai8_reading_disambiguation(client):
+    """大事/だいじ must not return the おおごと audio."""
+    resp = client.get("/audio.json", query_string={"term": "大事", "reading": "だいじ"})
+    assert resp.status_code == 200
+
+    urls = [
+        s["url"] for s in resp.json["audioSources"] if s["name"] == "[shinmeikai8] 大事"
+    ]
+    assert sorted(urls) == [
+        "http://localhost/utterances/shinmeikai8/07564.mp3",
+        "http://localhost/utterances/shinmeikai8/07565.mp3",
+    ]
+
+
 def test_audio__daijisen_combined_url(client):
     resp = client.get("/audio.json?term=%E9%83%A8&reading=%E3%81%B6")
     assert resp.status_code == 200

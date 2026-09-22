@@ -169,6 +169,9 @@ class IndexJsonClient(DictClient):
     """Client for the version-2 "index.json" dictionary format (daijisen,
     shinmeikai8) - a per-dict media directory plus headword lookups."""
 
+    # Bump when the on-disk index schema changes so stale caches rebuild.
+    _SCHEMA_VERSION = 2
+
     def __init__(self, zipfile_path: Path):
         self.name = zipfile_path.stem
         self.zipfile_path = zipfile_path
@@ -178,11 +181,14 @@ class IndexJsonClient(DictClient):
         self._ensure_index()
 
     def _ensure_index(self) -> None:
-        if self.index_path.exists():
+        if (
+            self.index_path.exists()
+            and self._index_schema_version() == self._SCHEMA_VERSION
+        ):
             logger.info("index found for %s", self.name)
             return
 
-        logger.info("index not found for %s - building", self.name)
+        logger.info("index not found or outdated for %s - building", self.name)
 
         # This index caches media-file resolution (daijisen refs are written
         # `.ogg` but the ZIP ships `.mp3`). Replacing a dictionary ZIP requires
@@ -206,6 +212,7 @@ class IndexJsonClient(DictClient):
                 if name.startswith(media_dir_prefix)
             }
 
+            files = index_json.get("files", {})
             rows = []
             for headword, refs in index_json.get("headwords", {}).items():
                 for ref in refs:
@@ -219,18 +226,35 @@ class IndexJsonClient(DictClient):
                         )
                         continue
                     media_file, internal_id, ext = resolved
-                    rows.append((headword, internal_id, ext))
+                    # The reading disambiguates headwords shared by multiple
+                    # readings (e.g. 柱: はしら / ちゅう / じゅう).
+                    reading = (files.get(ref) or {}).get("kana_reading")
+                    rows.append((headword, internal_id, ext, reading))
 
         with sqlite3.connect(temp_index_path) as conn:
             conn.execute(
-                "CREATE TABLE headwords (headword TEXT NOT NULL, id TEXT NOT NULL, ext TEXT NOT NULL)"
+                "CREATE TABLE headwords (headword TEXT NOT NULL, id TEXT NOT NULL, "
+                "ext TEXT NOT NULL, reading TEXT)"
             )
             conn.execute("CREATE INDEX idx_headwords_headword ON headwords (headword)")
+            conn.execute(
+                "CREATE INDEX idx_headwords_headword_reading "
+                "ON headwords (headword, reading)"
+            )
             conn.executemany(
-                "INSERT INTO headwords (headword, id, ext) VALUES (?, ?, ?)",
+                "INSERT INTO headwords (headword, id, ext, reading) VALUES (?, ?, ?, ?)",
                 set(rows),
             )
+            conn.execute(f"PRAGMA user_version = {self._SCHEMA_VERSION}")
         os.replace(temp_index_path, self.index_path)
+
+    def _index_schema_version(self) -> int | None:
+        try:
+            with sqlite3.connect(self.index_path) as conn:
+                row = conn.execute("PRAGMA user_version").fetchone()
+        except sqlite3.DatabaseError:
+            return None
+        return row[0] if row else None
 
     def _resolve_ref(
         self, ref: str, media_files: set[str]
@@ -260,10 +284,12 @@ class IndexJsonClient(DictClient):
         return {"words": row[0], "sounds": row[1]}
 
     def get_utterances(self, expression: str, reading: str) -> list[Utterance]:
-        # term-first gives homograph precision; reading covers kana-only keys
-        rows = self._lookup_headword(expression)
+        # Match on both term and reading to disambiguate homographs that share
+        # a headword but have different readings (e.g. 柱: はしら / ちゅう /
+        # じゅう). The reading-only lookup covers kana-only headword keys.
+        rows = self._lookup_headword(expression, reading)
         if not rows:
-            rows = self._lookup_headword(reading)
+            rows = self._lookup_headword(reading, reading)
 
         utterances = []
         for internal_id, ext in rows:
@@ -280,10 +306,13 @@ class IndexJsonClient(DictClient):
             )
         return utterances
 
-    def _lookup_headword(self, headword: str) -> list[tuple[str, str]]:
-        stmt = "SELECT DISTINCT id, ext FROM headwords WHERE headword = ? ORDER BY id"
+    def _lookup_headword(self, headword: str, reading: str) -> list[tuple[str, str]]:
+        stmt = (
+            "SELECT DISTINCT id, ext FROM headwords "
+            "WHERE headword = ? AND reading = ? ORDER BY id"
+        )
         with sqlite3.connect(self.index_path) as conn:
-            rows = conn.execute(stmt, (headword,)).fetchall()
+            rows = conn.execute(stmt, (headword, reading)).fetchall()
         return [(row[0], row[1]) for row in rows]
 
     def get_audio_by_id(self, internal_id: str):
